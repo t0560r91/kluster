@@ -1,0 +1,85 @@
+Description: Creates AWS resources required to manage EKS clusters.
+
+Resources:
+###############################################################################
+# EIP                                                                         #
+###############################################################################
+  klusterLbcEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: project_name
+          Value: kluster
+        - Key: cost
+          Value: charged
+
+  # Adding NAT route for the private nodes to access the Kubernetes Control Plane via internet.
+  klusterNatEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: project_name
+          Value: kluster
+        - Key: cost
+          Value: charged
+  klusterNatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt klusterNatEip.AllocationId
+      ConnectivityType: public  # default
+      SubnetId: !ImportValue kluster-base-klusterPublicSubnetId
+      Tags:
+        - Key: project_name
+          Value: kluster
+  klusterNatRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !ImportValue kluster-base-klusterPrivateRouteTableId
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref klusterNatGateway
+
+
+###############################################################################
+# EKS Node Group                                                              #
+###############################################################################
+  klusterPrivateNodegroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      NodegroupName: privateNg
+      ClusterName: !ImportValue kluster-base-klusterName
+      NodeRole: !ImportValue kluster-base-klusterNodeServiceRoleArn
+      Subnets:
+        - !ImportValue kluster-base-klusterPrivateSubnetId
+      AmiType: AL2023_x86_64_STANDARD
+      CapacityType: ON_DEMAND
+      InstanceTypes: [t2.large]
+      ScalingConfig:
+        DesiredSize: 1
+        MinSize: 0
+        MaxSize: 5
+      RemoteAccess:
+        Ec2SshKey: skim-to-ec2
+      Labels:
+        nodeSubnetType: private
+
+  klusterPublicNodegroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      NodegroupName: publicNg
+      ClusterName: !ImportValue kluster-base-klusterName
+      NodeRole: !ImportValue kluster-base-klusterNodeServiceRoleArn
+      Subnets:
+        - !ImportValue kluster-base-klusterPublicSubnetId
+      AmiType: AL2023_x86_64_STANDARD
+      CapacityType: ON_DEMAND
+      InstanceTypes: [t2.large]
+      # TODO: Needs to consider how many Pods will be created and how many Node resources are needed (NIC, CPU, Mem etc)
+      # ./max-pods-calculator.sh --instance-type t2.micro --cni-version 1.8.0-eksbuild.1
+      ScalingConfig:
+        DesiredSize: 1
+        MinSize: 0
+        MaxSize: 5
+      RemoteAccess:
+        Ec2SshKey: skim-to-ec2
+      Labels:
+        nodeSubnetType: public

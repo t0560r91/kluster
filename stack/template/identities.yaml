@@ -1,0 +1,336 @@
+Description: IAM Identities required for EKS development
+
+Resources:
+  ### Developer Roles ###
+  eksAdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: eksAdminRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: 
+              AWS: arn:aws:iam::848808798256:root
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/IAMFullAccess
+        - arn:aws:iam::aws:policy/AmazonVPCFullAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+      Policies:
+        - PolicyName: eksFullAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: eks:*
+                Resource: '*'
+        - PolicyName: eksRoleManagementPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: "arn:aws:iam::848808798256:role/aws-service-role/eks.amazonaws.com/AWSServiceRoleForAmazonEKS"
+                Condition:
+                  ForAnyValue:StringEquals:
+                      iam:AWSServiceName: eks
+              # TODO: Is this required?
+#              - Effect: Allow
+#                Action: iam:PassRole
+#                Resource: "arn:aws:iam::848808798256:role/eksClusterRole"  # TODO: This need to be updated.
+
+  eksUserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: eksUserRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: 
+              AWS: arn:aws:iam::848808798256:root
+      Policies:
+        - PolicyName: eksFullAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: eks:*
+                Resource: '*'
+
+  # Permission will be given separately via Kubernetes Role
+  klusterAdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: klusterAdminRole
+#      Path: !Sub '/${clusterName}/devs/'  # This is not allowed in EKS aws-auth.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: 
+              AWS: arn:aws:iam::848808798256:root
+      Policies:
+        - PolicyName: eksViewerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - eks:ListClusters
+                  - eks:DescribeCluster  # Needed for eks update-kubeconfig
+                  - eks:ListNodegroups
+                  - eks:DescribeNodegroup
+                  - eks:ListAddons
+                  - eks:DescribeAddonVersions
+                  - eks:ListUpdates
+                  - eks:ListFargateProfiles
+                  - eks:ListIdentityProviderConfigs
+                  - iam:ListRoles
+                Resource: '*'
+        - PolicyName: KubernetesAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:AccessKubernetesApi  # Needed for eks get-token?
+                Resource: '*'
+
+  # Permission will be given separately via Kubernetes Role
+  klusterUserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: klusterUserRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: 
+              AWS: arn:aws:iam::848808798256:root
+      Policies:
+        - PolicyName: eksViewerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - eks:ListClusters
+                  - eks:DescribeCluster  # Needed for eks update-kubeconfig
+                  - eks:ListNodegroups
+                  - eks:DescribeNodegroup
+                  - eks:ListAddons
+                  - eks:DescribeAddonVersions
+                  - eks:ListUpdates
+                  - eks:ListFargateProfiles
+                  - eks:ListIdentityProviderConfigs
+                  - iam:ListRoles
+                Resource: '*'
+        - PolicyName: KubernetesAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:AccessKubernetesApi  # Needed for eks get-token?
+                Resource: '*'
+
+  ns1AdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ns1AdminRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: 
+              AWS: arn:aws:iam::848808798256:root
+      Policies:
+        - PolicyName: eksViewerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - eks:ListClusters
+                  - eks:DescribeCluster  # Needed for eks update-kubeconfig
+                  - eks:ListNodegroups
+                  - eks:DescribeNodegroup
+                  - eks:ListAddons
+                  - eks:DescribeAddonVersions
+                  - eks:ListUpdates
+                  - eks:ListFargateProfiles
+                  - eks:ListIdentityProviderConfigs
+                  - iam:ListRoles
+                Resource: '*'
+        - PolicyName: KubernetesAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:AccessKubernetesApi  # Needed for eks get-token?
+                Resource: '*'
+
+  ns1UserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ns1UserRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: 
+              AWS: arn:aws:iam::848808798256:root
+      Policies:
+        - PolicyName: eksViewerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - eks:ListClusters
+                  - eks:DescribeCluster  # Needed for eks update-kubeconfig
+                  - eks:ListNodegroups
+                  - eks:DescribeNodegroup
+                  - eks:ListAddons
+                  - eks:DescribeAddonVersions
+                  - eks:ListUpdates
+                  - eks:ListFargateProfiles
+                  - eks:ListIdentityProviderConfigs
+                  - iam:ListRoles
+                Resource: '*'
+        - PolicyName: KubernetesAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:AccessKubernetesApi  # Needed for eks get-token?
+                Resource: '*'
+
+  ### Groups ###
+  ### EKS Admin Group needs permissions to:
+  ###   - create necessary IAM roles
+  ###   - create VPC for the ${clusterName}
+  ###   - use cloudformation
+  ###   - perform all eks actions
+  ###   - create and assign a service role to the ${clusterName}
+  eksAdminGroup:
+    DependsOn: 
+      - eksAdminRole
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: eksAdminGroup
+      Policies:
+        - PolicyName: assumeRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !GetAtt eksAdminRole.Arn
+
+  eksUserGroup:
+    DependsOn: 
+      - eksUserRole
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: eksUserGroup
+      Policies:
+        - PolicyName: assumeRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !GetAtt eksUserRole.Arn
+
+  klusterAdminGroup:
+    DependsOn: 
+      - klusterAdminRole
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: klusterAdminGroup
+      Policies:
+        - PolicyName: assumeRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !GetAtt klusterAdminRole.Arn
+
+  klusterUserGroup:
+    DependsOn: 
+      - klusterUserRole
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: klusterUserGroup
+      Policies:
+        - PolicyName: assumeRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !GetAtt klusterUserRole.Arn
+
+  ns1AdminGroup:
+    DependsOn: 
+      - ns1AdminRole
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: ns1AdminGroup
+      Policies:
+        - PolicyName: assumeRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !GetAtt ns1AdminRole.Arn
+
+  ns1UserGroup:
+    DependsOn: 
+      - ns1UserRole
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: ns1UserGroup
+      Policies:
+        - PolicyName: assumeRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !GetAtt ns1UserRole.Arn
+
+  ### UserAddition ###
+  addUsersToEksAdminGroup:
+    Type: AWS::IAM::UserToGroupAddition
+    Properties:
+      GroupName: !Ref eksAdminGroup
+      Users:
+        - skim  # This user is created outside of this Stack.
+
+  addUsersToKlusterAdminGroup:
+    Type: AWS::IAM::UserToGroupAddition
+    Properties:
+      GroupName: !Ref klusterAdminGroup
+      Users:
+        - skim  # This user is created outside of this Stack.
+
+  addUsersToNs1AdminGroup:
+    Type: AWS::IAM::UserToGroupAddition
+    Properties:
+      GroupName: !Ref ns1AdminGroup
+      Users:
+        - skim  # This user is created outside of this Stack.
+

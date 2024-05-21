@@ -1,0 +1,9 @@
+clusterName: klusterLab
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations: 
+    eks.amazonaws.com/role-arn: arn:aws:iam::848808798256:role/kuardLbcServiceRole
+# TODO: automate this
+region: us-west-2
+vpcId: vpc-0f795066e31242260

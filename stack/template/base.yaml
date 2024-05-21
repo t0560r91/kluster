@@ -1,0 +1,429 @@
+Description: Base resources required for EKS
+Parameters:
+  clusterName:
+    Type: String
+    Default: klusterLab
+  eksVersion:
+    Type: String
+    Default: '1.29'
+
+Resources:
+### Service Roles
+  # ClusterRole - associate with a kluster
+  klusterServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: klusterServiceRole
+#      Path: !Sub '/${clusterName}/services/'  # This is not allowed in EKS aws-auth.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            # TODO: Does this grant permission for the eks service to configure the role for the clusters?
+            Service: eks.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+  # NodeRole - associate with a nodegroup and therefore all managed node in that nodegroup
+  klusterNodeServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: klusterNodeServiceRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            # TODO: Does this grant permission for the ec2 service to configure the role for the nodes?
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        # TODO: Need to figure out CNI.
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+
+  klusterLbcServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: klusterLbcServiceRole
+      # TODO: Do we need the AWS LBC SA to be in kube-system NS?
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Principal": {
+                          "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/${OIDCPath}"
+                      },
+                      "Action": "sts:AssumeRoleWithWebIdentity",
+                      "Condition": {
+                          "StringEquals": {
+                              "${OIDCPath}:aud": "sts.amazonaws.com",
+                              "${OIDCPath}:sub": "system:serviceaccount:kube-system:aws-load-balancer-controller"
+                          }
+                      }
+                  }
+              ]
+          }
+        - OIDCPath: !Select [1, !Split ["//", !GetAtt kluster.OpenIdConnectIssuerUrl]]
+      Policies:
+        - PolicyName: klusterLbcServiceRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName: elasticloadbalancing.amazonaws.com
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeAccountAttributes
+                  - ec2:DescribeAddresses
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeVpcPeeringConnections
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeInstances
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeTags
+                  - ec2:GetCoipPoolUsage
+                  - ec2:DescribeCoipPools
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:DescribeLoadBalancerAttributes
+                  - elasticloadbalancing:DescribeListeners
+                  - elasticloadbalancing:DescribeListenerCertificates
+                  - elasticloadbalancing:DescribeSSLPolicies
+                  - elasticloadbalancing:DescribeRules
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:DescribeTargetGroupAttributes
+                  - elasticloadbalancing:DescribeTargetHealth
+                  - elasticloadbalancing:DescribeTags
+                  - elasticloadbalancing:DescribeTrustStores
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cognito-idp:DescribeUserPoolClient
+                  - acm:ListCertificates
+                  - acm:DescribeCertificate
+                  - iam:ListServerCertificates
+                  - iam:GetServerCertificate
+                  - waf-regional:GetWebACL
+                  - waf-regional:GetWebACLForResource
+                  - waf-regional:AssociateWebACL
+                  - waf-regional:DisassociateWebACL
+                  - wafv2:GetWebACL
+                  - wafv2:GetWebACLForResource
+                  - wafv2:AssociateWebACL
+                  - wafv2:DisassociateWebACL
+                  - shield:GetSubscriptionState
+                  - shield:DescribeProtection
+                  - shield:CreateProtection
+                  - shield:DeleteProtection
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:CreateSecurityGroup
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                Resource: arn:aws:ec2:*:*:security-group/*
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: CreateSecurityGroup
+                  'Null':
+                    aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+              - Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                Resource: arn:aws:ec2:*:*:security-group/*
+                Condition:
+                  'Null':
+                    aws:RequestTag/elbv2.k8s.aws/cluster: 'true'
+                    aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+              - Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:DeleteSecurityGroup
+                Resource: "*"
+                Condition:
+                  'Null':
+                    aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:CreateLoadBalancer
+                  - elasticloadbalancing:CreateTargetGroup
+                Resource: "*"
+                Condition:
+                  'Null':
+                    aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:CreateListener
+                  - elasticloadbalancing:DeleteListener
+                  - elasticloadbalancing:CreateRule
+                  - elasticloadbalancing:DeleteRule
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:AddTags
+                  - elasticloadbalancing:RemoveTags
+                Resource:
+                  - arn:aws:elasticloadbalancing:*:*:targetgroup/*/*
+                  - arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*
+                  - arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*
+                Condition:
+                  'Null':
+                    aws:RequestTag/elbv2.k8s.aws/cluster: 'true'
+                    aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:AddTags
+                  - elasticloadbalancing:RemoveTags
+                Resource:
+                  - arn:aws:elasticloadbalancing:*:*:listener/net/*/*/*
+                  - arn:aws:elasticloadbalancing:*:*:listener/app/*/*/*
+                  - arn:aws:elasticloadbalancing:*:*:listener-rule/net/*/*/*
+                  - arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*/*
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:ModifyLoadBalancerAttributes
+                  - elasticloadbalancing:SetIpAddressType
+                  - elasticloadbalancing:SetSecurityGroups
+                  - elasticloadbalancing:SetSubnets
+                  - elasticloadbalancing:DeleteLoadBalancer
+                  - elasticloadbalancing:ModifyTargetGroup
+                  - elasticloadbalancing:ModifyTargetGroupAttributes
+                  - elasticloadbalancing:DeleteTargetGroup
+                Resource: "*"
+                Condition:
+                  'Null':
+                    aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:AddTags
+                Resource:
+                  - arn:aws:elasticloadbalancing:*:*:targetgroup/*/*
+                  - arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*
+                  - arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*
+                Condition:
+                  StringEquals:
+                    elasticloadbalancing:CreateAction:
+                      - CreateTargetGroup
+                      - CreateLoadBalancer
+                  'Null':
+                    aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:RegisterTargets
+                  - elasticloadbalancing:DeregisterTargets
+                Resource: arn:aws:elasticloadbalancing:*:*:targetgroup/*/*
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:SetWebAcl
+                  - elasticloadbalancing:ModifyListener
+                  - elasticloadbalancing:AddListenerCertificates
+                  - elasticloadbalancing:RemoveListenerCertificates
+                  - elasticloadbalancing:ModifyRule
+                Resource: "*"
+
+
+
+  ###############################################################################
+  # VPC                                                                         #
+  ###############################################################################
+
+  # VPC
+  klusterVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/24
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: project_name
+          Value: kluster
+  klusterIgw:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: project_name
+          Value: kluster
+  klusterIgwAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref klusterVpc
+      InternetGatewayId: !Ref klusterIgw
+
+  # VPC - Public Subnet
+  klusterPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref klusterVpc
+      AvailabilityZone: us-west-2b
+      CidrBlock: 10.0.0.128/25
+      MapPublicIpOnLaunch: true  # Required for nodegroup to join cluster
+      Tags:
+        - Key: project_name
+          Value: kluster
+          # Used for AWS LoadBalancer
+        - Key: Name
+          Value: klusterPublicSubnet  # This is used for Kubernetes LBC Service declaration
+        # - Key: kubernetes.io/cluster/kluster  # TODO: parameterize the cluster-name.
+        #   Value: owned  # or shared
+        # - Key: kubernetes.io/role/elb
+        #   Value: 1
+  klusterPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref klusterVpc
+      Tags:
+        - Key: project_name
+          Value: kluster
+  klusterIgwRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref klusterPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref klusterIgw
+  # Local routes are added by default
+  klusterPublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref klusterPublicSubnet
+      RouteTableId: !Ref klusterPublicRouteTable
+
+  # VPC - Private Subnet
+  klusterPrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref klusterVpc
+      AvailabilityZone: us-west-2a
+      CidrBlock: 10.0.0.0/25
+      Tags:
+        - Key: project_name
+          Value: kluster
+          # Used for AWS LoadBalancerController
+        # - Key: kubernetes.io/cluster/kluster  # TODO: parameterize the cluster-name
+        #   Value: owned  # or shared
+        # - Key: kubernetes.io/role/internal-elb
+        #   Value: 1
+        - Key: Name
+          Value: klusterPrivateSubnet  # This is used for Kubernetes LBC Service declaration
+  klusterPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref klusterVpc
+      Tags:
+        - Key: project_name
+          Value: kluster
+  # Local routes are added by default
+  klusterPrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref klusterPrivateSubnet
+      RouteTableId: !Ref klusterPrivateRouteTable
+
+  # TODO: Do we need VPC Endpoint?
+
+
+  ###############################################################################
+  # Security Group                                                              #
+  ###############################################################################
+  klusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all TPC inbound traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 1
+          ToPort: 65535
+      Tags:
+        - Key: project_name
+          Value: kluster
+        - Key: Name
+          Value: !Sub '${clusterName}FrontendSecurityGroup'  # This is used for LBC service declaration.
+      VpcId: !Ref klusterVpc
+
+
+  ###############################################################################
+  # EKS Cluster                                                                 #
+  ###############################################################################
+  kluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Version: !Sub '${eksVersion}'
+      Name: !Sub '${clusterName}'
+      RoleArn: !GetAtt klusterServiceRole.Arn
+      ResourcesVpcConfig:
+        EndpointPublicAccess: true  # default
+        EndpointPrivateAccess: false  # default
+        PublicAccessCidrs: [ "0.0.0.0/0" ]  # default
+        SubnetIds:
+          - !Ref klusterPublicSubnet
+          - !Ref klusterPrivateSubnet
+        SecurityGroupIds:
+          - !GetAtt klusterSecurityGroup.GroupId
+      KubernetesNetworkConfig:
+        IpFamily: ipv4  # default
+        ServiceIpv4Cidr: 192.168.0.0/16  # this shouldn't overlap with other CIDR block in the VPC.
+      AccessConfig:
+        AuthenticationMode: CONFIG_MAP  # default
+        BootstrapClusterCreatorAdminPermissions: true  # default
+      Tags:
+        - Key: project_name
+          Value: kluster
+
+  # klusterOidcProvider:
+  #   Type: AWS::IAM::OIDCProvider
+  #   Properties:
+  #     ClientIdList:
+  #       - sts.amazonaws.com
+  #     Tags:
+  #       - Key: project_name
+  #         Value: kluster
+  #     Url: !GetAtt klusterCluster.OpenIdConnectIssuerUrl
+  #     ThumbprintList: [] # optional, automatcially retrieved from the OIDC provider.
+Outputs:
+  klusterName:
+    Value: !Ref clusterName
+    Export:
+      Name: !Sub "${AWS::StackName}-klusterName"
+  klusterVpcId:
+    Value: !Ref klusterVpc
+    Export:
+      Name: !Sub "${AWS::StackName}-klusterVpcId"
+  klusterPublicSubnetId:
+    Value: !Ref klusterPublicSubnet
+    Export:
+      Name: !Sub "${AWS::StackName}-klusterPublicSubnetId"
+  klusterPrivateSubnetId:
+    Value: !Ref klusterPrivateSubnet
+    Export:
+      Name: !Sub "${AWS::StackName}-klusterPrivateSubnetId"
+  klusterPrivateRouteTableId:
+    Value: !Ref klusterPrivateRouteTable
+    Export:
+      Name: !Sub "${AWS::StackName}-klusterPrivateRouteTableId"
+  klusterNodeServiceRoleArn:
+    Value: !GetAtt klusterNodeServiceRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-klusterNodeServiceRoleArn"

@@ -1,0 +1,6 @@
+2024-05-16
+
+    - failure: while create the node groups, a node which belongs to the public subnet is not able to join the cluster
+    - cause: aws-auth does not allow node role name to have optional path
+    - solution: remove path specification for the node role
+The ARN of the role that you specify can't include a path other than /. For example, if the name of your role is development/apps/my-role, you'd need to change it to my-role when specifying the ARN for the role. Make sure that you specify the node IAM role ARN (not the instance profile ARN).
